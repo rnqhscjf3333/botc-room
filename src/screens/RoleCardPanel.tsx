@@ -35,6 +35,7 @@ export default function RoleCardPanel({
             <h2 className="role-name">{role.ko}</h2>
             <div className="muted small">{role.en}</div>
             <p className="ability">{role.ability}</p>
+            {role.ability.includes('*') && <p className="muted small">* 첫날 밤에는 해당되지 않습니다</p>}
             <p className="muted small">탭하면 가려져요</p>
           </>
         )}

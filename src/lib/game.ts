@@ -63,7 +63,7 @@ const shuffle = <T,>(a: T[]): T[] => {
 const pick = (scriptId: string, team: Team, n: number) =>
   shuffle(getScript(scriptId).roles.filter((r) => ROLES[r].team === team)).slice(0, n)
 
-/** 인원 수에 맞춰 랜덤 배정. 남작이 뽑히면 아웃사이더 +2, 마을 주민 -2 로 보정. */
+/** 인원 수에 맞춰 랜덤 배정. 남작이 뽑히면 외지인 +2, 마을주민 -2 로 보정. */
 export function randomAssign(state: HostState): HostState {
   const n = Math.min(15, Math.max(5, state.players.length))
   const [t, o, m, d] = DISTRIBUTION[n]
