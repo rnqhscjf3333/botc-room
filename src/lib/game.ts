@@ -8,6 +8,7 @@ export interface HostPlayer {
   shownRoleId?: string // 본인에게 보여줄 직업 (주정뱅이/광인 등 속이는 경우)
   alive: boolean
   nominated: boolean // 오늘 지목됨
+  ghostVoteUsed: boolean // 사망 후 1회 투표권 사용 여부
   message: string // 이야기꾼이 이 플레이어에게 보내는 개인 메시지
 }
 
@@ -35,7 +36,7 @@ export interface PlayerView {
   time: 'day' | 'night'
   day: number
   scriptId: string
-  me: { name: string; roleId: string | null; alive: boolean; message: string }
+  me: { name: string; roleId: string | null; alive: boolean; ghostVoteUsed: boolean; message: string }
   seats: SeatView[]
   evil: { mates: { name: string; roleId: string }[]; bluffs: string[] } | null
 }
@@ -82,6 +83,7 @@ export function randomAssign(state: HostState): HostState {
     shownRoleId: undefined,
     alive: true,
     nominated: false,
+    ghostVoteUsed: false,
   }))
   return { ...state, players, bluffs: randomBluffs({ ...state, players }) }
 }
@@ -117,6 +119,7 @@ export function buildView(state: HostState, pid: string): PlayerView | null {
       name: me.name,
       roleId: started ? (me.shownRoleId ?? me.roleId ?? null) : null,
       alive: me.alive,
+      ghostVoteUsed: me.ghostVoteUsed,
       message: me.message,
     },
     seats: state.players.map((p) => ({

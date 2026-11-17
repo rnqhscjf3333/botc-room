@@ -1,82 +1,152 @@
-import { useState } from 'react'
-import { ROLES, getScript } from '../data/roles'
-import RoleCardPanel from './RoleCardPanel'
+import { useRef, useState } from 'react'
+import { ROLES, getScript, TEAM_LABEL, type Team } from '../data/roles'
+import { CircleTable, RoleDetail, RoleIcon } from '../components'
 import { useClient } from '../lib/net'
 import { useWakeLock } from '../lib/useWakeLock'
+import RoleCardPanel from './RoleCardPanel'
+
+const TEAMS: Team[] = ['townsfolk', 'outsider', 'minion', 'demon']
+const TABS = ['내 직업', '좌석', '직업 목록']
 
 export default function PlayerScreen({ code, name, onExit }: { code: string; name: string; onExit: () => void }) {
   const { view, status, error } = useClient(code, name)
   const [shown, setShown] = useState(false)
+  const [page, setPage] = useState(0)
+  const [detail, setDetail] = useState<string | null>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   useWakeLock()
 
-  return (
-    <main className="page narrow">
-      <header className="player-head">
-        <div>
-          <b>{name}</b> <span className="muted">· 방 {code}</span>
-        </div>
-        <span className={`pill ${status}`}>
-          {status === 'online' ? '연결됨' : status === 'connecting' ? '연결 중…' : '문제 발생'}
-        </span>
-      </header>
+  const playing = view?.phase === 'playing'
+  const pages = playing ? 3 : 1
 
-      {error && <p className="notice error">{error}</p>}
+  const goto = (i: number) => {
+    const el = scroller.current
+    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
+  }
+  const onScroll = () => {
+    const el = scroller.current
+    if (el) setPage(Math.round(el.scrollLeft / el.clientWidth))
+  }
 
-      {!view ? (
+  const header = (
+    <header className="player-head">
+      <div>
+        <b>{name}</b> <span className="muted">· 방 {code}</span>
+      </div>
+      <span className={`pill ${status}`}>
+        {status === 'online' ? '연결됨' : status === 'connecting' ? '연결 중…' : '문제 발생'}
+      </span>
+    </header>
+  )
+
+  if (!view) {
+    return (
+      <main className="page narrow">
+        {header}
+        {error && <p className="notice error">{error}</p>}
         <section className="card center">
           <p className="muted">{status === 'online' ? '불러오는 중…' : '호스트에 연결하는 중…'}</p>
           <button className="btn" onClick={onExit}>
             나가기
           </button>
         </section>
-      ) : (
-        <>
-          <div className="time-badge" data-time={view.phase === 'playing' ? view.time : 'lobby'}>
-            {view.phase !== 'playing'
-              ? '⏳ 게임 시작 대기 중'
-              : `${view.time === 'night' ? '🌙' : '☀️'} ${view.day}일차 ${view.time === 'night' ? '밤' : '낮'}`}
-          </div>
+      </main>
+    )
+  }
 
-          {view.phase === 'playing' && (
-            <>
+  const timeLabel = playing
+    ? `${view.time === 'night' ? '🌙' : '☀️'} ${view.day}일차 ${view.time === 'night' ? '밤' : '낮'}`
+    : '⏳ 게임 시작 대기 중'
+  const script = getScript(view.scriptId)
+
+  const seatsView = (
+    <>
+      <CircleTable
+        seats={view.seats.map((s, i) => ({ key: String(i), name: s.name, dead: !s.alive, highlight: s.isMe }))}
+        center={<span className="table-center-text">{timeLabel}</span>}
+      />
+      <p className="muted small center">회색 = 사망 · 보라색 테두리 = 나</p>
+    </>
+  )
+
+  return (
+    <main className="player-app">
+      <div className="pa-top">
+        {header}
+        {error && <p className="notice error">{error}</p>}
+        {playing && (
+          <nav className="tabs" aria-label="화면 이동">
+            {TABS.map((t, i) => (
+              <button key={t} className={`tab ${page === i ? 'on' : ''}`} onClick={() => goto(i)}>
+                {t}
+              </button>
+            ))}
+          </nav>
+        )}
+      </div>
+
+      <div className="pager" ref={scroller} onScroll={onScroll} style={{ ['--pages' as string]: pages }}>
+        {playing ? (
+          <>
+            <section className="pane">
+              <div className="time-badge" data-time={view.time}>
+                {timeLabel}
+              </div>
               <RoleCardPanel view={view} shown={shown} onToggle={() => setShown((x) => !x)} />
-            </>
-          )}
+            </section>
 
-          <section className="card">
-            <h3>좌석 ({view.seats.length}명)</h3>
-            <ol className="seats">
-              {view.seats.map((s, i) => (
-                <li key={i} className={`${s.alive ? '' : 'dead'} ${s.isMe ? 'me' : ''}`}>
-                  <span className="seat">{i + 1}</span>
-                  <span className="pname">{s.name}</span>
-                  {s.isMe && <span className="muted small">(나)</span>}
-                  {s.nominated && <span className="flag">👉 지목됨</span>}
-                  {!s.alive && <span className="flag skull">💀</span>}
-                </li>
-              ))}
-            </ol>
+            <section className="pane">
+              <h3 className="pane-title">좌석 ({view.seats.length}명)</h3>
+              {seatsView}
+            </section>
+
+            <section className="pane">
+              <h3 className="pane-title">{script.name}</h3>
+              <p className="muted small">직업을 누르면 설명을 볼 수 있어요.</p>
+              {TEAMS.map((t) => {
+                const list = script.roles.filter((r) => ROLES[r].team === t)
+                return (
+                  <div key={t}>
+                    <h3 className={`grid-title ${t}`}>{TEAM_LABEL[t]}</h3>
+                    <div className="role-grid">
+                      {list.map((r) => (
+                        <button key={r} className={`role-cell ${t}`} onClick={() => setDetail(r)}>
+                          <RoleIcon id={r} size={52} />
+                          <span>{ROLES[r].ko}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </section>
+          </>
+        ) : (
+          <section className="pane">
+            <div className="time-badge" data-time="lobby">
+              {timeLabel}
+            </div>
+            <h3 className="pane-title">현재 참가자 ({view.seats.length}명)</h3>
+            {seatsView}
           </section>
+        )}
+      </div>
 
-          {view.phase === 'playing' && (
-            <details className="card">
-              <summary>시나리오 직업 목록 · {getScript(view.scriptId).name}</summary>
-              <ul className="plain scriptlist">
-                {getScript(view.scriptId).roles.map((r) => (
-                  <li key={r}>
-                    <span className={`badge ${ROLES[r].team}`}>{ROLES[r].ko}</span>
-                    <span className="muted small">{ROLES[r].ability}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-
-          <button className="btn small" onClick={onExit}>
-            나가기
-          </button>
-        </>
+      {playing && (
+        <div className="dots" aria-hidden>
+          {TABS.map((_, i) => (
+            <span key={i} className={page === i ? 'on' : ''} />
+          ))}
+        </div>
       )}
+
+      <div className="pa-bottom">
+        <button className="btn small" onClick={onExit}>
+          나가기
+        </button>
+      </div>
+
+      {detail && <RoleDetail id={detail} onClose={() => setDetail(null)} />}
     </main>
   )
 }

@@ -117,7 +117,7 @@ export function useHost(resume: boolean) {
             ...s,
             players: [
               ...s.players,
-              { id: pid, name: msg.name.trim().slice(0, 12) || '이름없음', connected: true, alive: true, nominated: false, message: '' },
+              { id: pid, name: msg.name.trim().slice(0, 12) || '이름없음', connected: true, alive: true, nominated: false, ghostVoteUsed: false, message: '' },
             ],
           })
         }
