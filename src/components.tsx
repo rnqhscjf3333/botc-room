@@ -38,8 +38,19 @@ export function Modal({ title, onClose, children, wide }: { title?: ReactNode; o
       document.body.style.overflow = prev
     }
   }, [onClose])
+  // 모달 안에서 누른 채 바깥에서 떼도 닫히지 않도록, 누르기 시작한 곳이 배경일 때만 닫는다.
+  const pressedBackdrop = useRef(false)
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onPointerDown={(e) => {
+        pressedBackdrop.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressedBackdrop.current) onClose()
+        pressedBackdrop.current = false
+      }}
+    >
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{title}</h2>
