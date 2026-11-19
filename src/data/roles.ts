@@ -164,3 +164,17 @@ export const DISTRIBUTION: Record<number, [number, number, number, number]> = {
   14: [9, 1, 3, 1],
   15: [9, 2, 3, 1],
 }
+
+/** 능력 사용 시 선택하는 대상 수. 표에 없으면 1명. (0 = 정보/패시브 능력이라 대상 지정 없음) */
+const TARGETS: Record<string, number> = {}
+const setT = (n: number, ...ids: string[]) => ids.forEach((i) => (TARGETS[i] = n))
+setT(2, 'fortuneteller', 'seamstress', 'chambermaid', 'innkeeper', 'shabaloth')
+setT(
+  0,
+  'washerwoman', 'librarian', 'investigator', 'chef', 'empath', 'undertaker', 'virgin', 'soldier', 'mayor',
+  'drunk', 'recluse', 'saint', 'spy', 'scarletwoman', 'baron', 'grandmother', 'gossip', 'minstrel', 'tealady',
+  'pacifist', 'fool', 'goon', 'tinker', 'godfather', 'mastermind', 'clockmaker', 'mathematician', 'flowergirl',
+  'towncrier', 'oracle', 'savant', 'philosopher', 'artist', 'juggler', 'sage', 'mutant', 'sweetheart', 'barber',
+  'eviltwin', 'vortox',
+)
+export const abilityTargets = (roleId: string) => TARGETS[roleId] ?? 1

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type PointerEvent as RPointerEvent } from 'react'
+import type { ChatMsg } from './lib/game'
 import { ROLES, SCRIPTS, TEAM_LABEL, getScript, type Team } from './data/roles'
 
 const TEAMS: Team[] = ['townsfolk', 'outsider', 'minion', 'demon']
@@ -141,6 +142,23 @@ export interface TableSeat {
   roleId?: string
   badge?: ReactNode // 토큰 모서리에 붙는 작은 표시
   highlight?: boolean
+  cls?: string // 추가 클래스 (actor, picked, targetable 등)
+}
+
+export interface TableArrow {
+  id: string
+  from?: string // 좌석 key. 없으면 대상에 표식만 그린다(사망 등)
+  to: string
+  kind: 'nominate' | 'ability' | 'death' | 'revive'
+  roleId?: string
+  hot?: boolean // 가장 최근 이벤트 강조
+}
+
+const ARROW_COLOR: Record<TableArrow['kind'], string> = {
+  nominate: '#ff9f43',
+  ability: '#9b95fa',
+  death: '#ff5c5c',
+  revive: '#4cd68a',
 }
 
 /**
@@ -152,10 +170,12 @@ export function CircleTable({
   seats,
   center,
   showRole,
+  arrows,
   onSelect,
   onSwap,
 }: {
   seats: TableSeat[]
+  arrows?: TableArrow[]
   center?: ReactNode
   showRole?: boolean
   onSelect?: (i: number) => void
@@ -211,9 +231,69 @@ export function CircleTable({
     if (best !== s.i) onSwap?.(s.i, best)
   }
 
+  const idx = (key?: string) => seats.findIndex((x) => x.key === key)
+  const r = size / 2
+
   return (
     <div className="table-box" ref={boxRef}>
       <div className="table-ring" />
+      {arrows && arrows.length > 0 && (
+        <svg className="table-arrows" viewBox="0 0 100 100" aria-hidden>
+          <defs>
+            {(Object.keys(ARROW_COLOR) as TableArrow['kind'][]).map((k) => (
+              <marker key={k} id={`ah-${k}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill={ARROW_COLOR[k]} />
+              </marker>
+            ))}
+          </defs>
+          {arrows.map((a) => {
+            const ti = idx(a.to)
+            if (ti < 0) return null
+            const T = slot(ti)
+            const color = ARROW_COLOR[a.kind]
+            const fi = idx(a.from)
+            if (fi < 0) {
+              // 출발점이 없는 표식(사망/부활)
+              return (
+                <text key={a.id} x={T.x} y={T.y + 1.5} fontSize={r * 1.25} textAnchor="middle" opacity={a.hot ? 1 : 0.8}>
+                  {a.kind === 'death' ? '💀' : '♻'}
+                </text>
+              )
+            }
+            const F = slot(fi)
+            const dx = T.x - F.x
+            const dy = T.y - F.y
+            const len = Math.hypot(dx, dy) || 1
+            const ux = dx / len
+            const uy = dy / len
+            // 서로 마주 보는 화살표가 겹치지 않도록 진행 방향의 왼쪽으로 살짝 휘게 한다
+            const bend = Math.min(7, len * 0.12)
+            const cx = (F.x + T.x) / 2 + uy * bend
+            const cy = (F.y + T.y) / 2 - ux * bend
+            const sx = F.x + ux * (r + 0.8)
+            const sy = F.y + uy * (r + 0.8)
+            const ex = T.x - ux * (r + 2.2)
+            const ey = T.y - uy * (r + 2.2)
+            const mx = 0.25 * sx + 0.5 * cx + 0.25 * ex
+            const my = 0.25 * sy + 0.5 * cy + 0.25 * ey
+            return (
+              <g key={a.id} opacity={a.hot ? 1 : 0.75}>
+                <path d={`M${sx} ${sy} Q${cx} ${cy} ${ex} ${ey}`} fill="none" stroke={color} strokeWidth={a.hot ? 1.1 : 0.8} strokeLinecap="round" markerEnd={`url(#ah-${a.kind})`} strokeDasharray={a.kind === 'nominate' ? '2 1.4' : undefined} />
+                {a.kind === 'ability' && a.roleId ? (
+                  <>
+                    <circle cx={mx} cy={my} r={3.2} fill="#161621" stroke={color} strokeWidth={0.5} />
+                    <image href={`${import.meta.env.BASE_URL}icons/${a.roleId}.webp`} x={mx - 2.8} y={my - 2.8} width={5.6} height={5.6} />
+                  </>
+                ) : (
+                  <text x={mx} y={my + 1.6} fontSize={4.6} textAnchor="middle">
+                    {a.kind === 'nominate' ? '👉' : ''}
+                  </text>
+                )}
+              </g>
+            )
+          })}
+        </svg>
+      )}
       {center && <div className="table-center">{center}</div>}
       {seats.map((seat, i) => {
         const dragging = drag?.i === i
@@ -222,7 +302,7 @@ export function CircleTable({
         return (
           <div
             key={seat.key}
-            className={`token ${seat.dead ? 'dead' : ''} ${dragging ? 'dragging' : ''} ${seat.highlight ? 'hl' : ''} ${onSwap || onSelect ? 'interactive' : ''}`}
+            className={`token ${seat.dead ? 'dead' : ''} ${dragging ? 'dragging' : ''} ${seat.highlight ? 'hl' : ''} ${onSwap || onSelect ? 'interactive' : ''} ${seat.cls ?? ''}`}
             style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: `${size}%` }}
             onPointerDown={onSelect || onSwap ? (e) => down(e, i) : undefined}
             onPointerMove={move}
@@ -241,5 +321,60 @@ export function CircleTable({
         )
       })}
     </div>
+  )
+}
+
+const hhmm = (ts: number) => new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+
+/** 호스트↔플레이어 1:1 대화창. side 는 지금 보는 쪽. */
+export function ChatModal({
+  title,
+  side,
+  messages,
+  onSend,
+  onClose,
+}: {
+  title: ReactNode
+  side: 'host' | 'player'
+  messages: ChatMsg[]
+  onSend: (text: string) => void
+  onClose: () => void
+}) {
+  const [text, setText] = useState('')
+  const logRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages.length])
+  const submit = () => {
+    const t = text.trim()
+    if (!t) return
+    onSend(t)
+    setText('')
+  }
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="chat-log" ref={logRef}>
+        {messages.length === 0 && <p className="muted small center">아직 대화가 없어요.</p>}
+        {messages.map((m) => (
+          <div key={m.id} className={`bubble ${m.from === side ? 'me' : 'other'}`}>
+            {m.text}
+            <small>{hhmm(m.ts)}</small>
+          </div>
+        ))}
+      </div>
+      <form
+        className="chat-input"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit()
+        }}
+      >
+        <input value={text} maxLength={300} placeholder="메시지 입력" onChange={(e) => setText(e.target.value)} autoFocus />
+        <button className="btn primary" type="submit" disabled={!text.trim()}>
+          보내기
+        </button>
+      </form>
+    </Modal>
   )
 }

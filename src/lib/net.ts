@@ -4,8 +4,10 @@ import {
   buildView,
   makeCode,
   newState,
+  normalize,
   peerIdOf,
   uid,
+  type ChatMsg,
   type ClientMsg,
   type HostMsg,
   type HostState,
@@ -43,7 +45,10 @@ export type NetStatus = 'connecting' | 'online' | 'offline' | 'error'
 
 /** 호스트(이야기꾼) 측: 상태를 들고 있고, 접속한 각 플레이어에게 "본인 몫"만 보낸다. */
 export function useHost(resume: boolean) {
-  const [state, setState] = useState<HostState | null>(() => (resume ? load<HostState>(HOST_KEY) : null))
+  const [state, setState] = useState<HostState | null>(() => {
+    const saved = resume ? load<HostState>(HOST_KEY) : null
+    return saved ? normalize(saved) : null
+  })
   const [status, setStatus] = useState<NetStatus>('connecting')
   const [error, setError] = useState('')
   const stateRef = useRef<HostState | null>(state)
@@ -93,14 +98,26 @@ export function useHost(resume: boolean) {
       let pid: string | null = null
       conn.on('data', (raw) => {
         const msg = raw as ClientMsg
-        if (msg.t !== 'hello') return
         const s = stateRef.current
         if (!s) return
+        if (msg.t === 'chat') {
+          const text = String(msg.text ?? '').trim().slice(0, 300)
+          if (!pid || !text) return
+          const from = pid
+          const chat: ChatMsg = { id: uid(), from: 'player', text, day: s.day, time: s.time, ts: Date.now() }
+          commit({
+            ...s,
+            chats: { ...s.chats, [from]: [...(s.chats[from] ?? []), chat] },
+            unread: { ...s.unread, [from]: (s.unread[from] ?? 0) + 1 },
+          })
+          return
+        }
+        if (msg.t !== 'hello') return
         // pid로 먼저 찾고, 없으면(브라우저를 닫았다 다시 연 경우) 같은 이름의 끊긴 플레이어로 복구
         const existing =
           s.players.find((p) => p.id === msg.pid) ??
           s.players.find((p) => !p.connected && p.name === msg.name.trim().slice(0, 12))
-        if (!existing && s.phase === 'playing') {
+        if (!existing && s.phase !== 'lobby') {
           conn.send({ t: 'rejected', reason: '이미 게임이 시작되었어요.' } satisfies HostMsg)
           return
         }
@@ -186,6 +203,12 @@ export function useClient(code: string, name: string) {
   const [view, setView] = useState<PlayerView | null>(null)
   const [status, setStatus] = useState<NetStatus>('connecting')
   const [error, setError] = useState('')
+  const connRef = useRef<DataConnection | null>(null)
+
+  const sendChat = useCallback((text: string) => {
+    const c = connRef.current
+    if (c?.open) c.send({ t: 'chat', text } satisfies ClientMsg)
+  }, [])
 
   useEffect(() => {
     // pid는 탭 단위(sessionStorage)로 유지: 한 기기에서 탭 여러 개로 테스트해도 서로 안 겹침
@@ -214,6 +237,7 @@ export function useClient(code: string, name: string) {
     const connect = () => {
       if (cancelled || !peer || peer.destroyed) return
       conn = peer.connect(peerIdOf(code), { reliable: true })
+      connRef.current = conn
       conn.on('open', () => {
         setStatus('online')
         setError('')
@@ -252,12 +276,15 @@ export function useClient(code: string, name: string) {
     }
   }, [code, name])
 
-  return { view, status, error }
+  return { view, status, error, sendChat }
 }
 
 /** 오프라인 모드: 네트워크 없이 한 기기에서 진행. 상태만 localStorage 에 저장한다. */
 export function useOfflineHost(resume: boolean) {
-  const [state, setState] = useState<HostState>(() => (resume ? load<HostState>(OFFLINE_KEY) : null) ?? newState('LOCAL'))
+  const [state, setState] = useState<HostState>(() => {
+    const saved = resume ? load<HostState>(OFFLINE_KEY) : null
+    return saved ? normalize(saved) : newState('LOCAL')
+  })
   const update = useCallback((fn: (s: HostState) => HostState) => {
     setState((prev) => {
       const next = fn(prev)

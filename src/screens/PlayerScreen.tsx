@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { ROLES, getScript, TEAM_LABEL, type Team } from '../data/roles'
-import { CircleTable, RoleDetail, RoleIcon } from '../components'
+import { ChatModal, CircleTable, RoleDetail, RoleIcon } from '../components'
 import { useClient } from '../lib/net'
 import { useWakeLock } from '../lib/useWakeLock'
 import RoleCardPanel from './RoleCardPanel'
@@ -9,14 +9,19 @@ const TEAMS: Team[] = ['townsfolk', 'outsider', 'minion', 'demon']
 const TABS = ['내 직업', '좌석', '직업 목록']
 
 export default function PlayerScreen({ code, name, onExit }: { code: string; name: string; onExit: () => void }) {
-  const { view, status, error } = useClient(code, name)
+  const { view, status, error, sendChat } = useClient(code, name)
   const [shown, setShown] = useState(false)
   const [page, setPage] = useState(0)
   const [detail, setDetail] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [seen, setSeen] = useState(0) // 마지막으로 확인한 호스트 메시지 수
   const scroller = useRef<HTMLDivElement>(null)
   useWakeLock()
 
-  const playing = view?.phase === 'playing'
+  const playing = !!view && view.phase !== 'lobby'
+  const ended = view?.phase === 'ended'
+  const hostCount = view ? view.chat.filter((m) => m.from === 'host').length : 0
+  const unread = chatOpen ? 0 : Math.max(0, hostCount - seen)
   const pages = playing ? 3 : 1
 
   const goto = (i: number) => {
@@ -54,7 +59,9 @@ export default function PlayerScreen({ code, name, onExit }: { code: string; nam
     )
   }
 
-  const timeLabel = playing
+  const timeLabel = ended
+    ? '🏁 게임 종료'
+    : playing
     ? `${view.time === 'night' ? '🌙' : '☀️'} ${view.day}일차 ${view.time === 'night' ? '밤' : '낮'}`
     : '⏳ 게임 시작 대기 중'
   const script = getScript(view.scriptId)
@@ -62,10 +69,11 @@ export default function PlayerScreen({ code, name, onExit }: { code: string; nam
   const seatsView = (
     <>
       <CircleTable
-        seats={view.seats.map((s, i) => ({ key: String(i), name: s.name, dead: !s.alive, highlight: s.isMe }))}
+        showRole={ended}
+        seats={view.seats.map((s, i) => ({ key: String(i), name: s.name, dead: !s.alive, highlight: s.isMe, roleId: s.roleId }))}
         center={<span className="table-center-text">{timeLabel}</span>}
       />
-      <p className="muted small center">회색 = 사망 · 보라색 테두리 = 나</p>
+      <p className="muted small center">{ended ? '게임이 끝나 모두의 직업이 공개됐어요 · ' : ''}회색 = 사망 · 보라색 테두리 = 나</p>
     </>
   )
 
@@ -89,9 +97,12 @@ export default function PlayerScreen({ code, name, onExit }: { code: string; nam
         {playing ? (
           <>
             <section className="pane">
-              <div className="time-badge" data-time={view.time}>
+              <div className="time-badge" data-time={ended ? 'lobby' : view.time}>
                 {timeLabel}
               </div>
+              {ended && view.winner && (
+                <div className={`winner ${view.winner}`}>{view.winner === 'good' ? '😇 선한 팀 승리' : '😈 악한 팀 승리'}</div>
+              )}
               <RoleCardPanel view={view} shown={shown} onToggle={() => setShown((x) => !x)} />
             </section>
 
@@ -147,6 +158,22 @@ export default function PlayerScreen({ code, name, onExit }: { code: string; nam
       </div>
 
       {detail && <RoleDetail id={detail} onClose={() => setDetail(null)} />}
+
+      <button className="fab" onClick={() => setChatOpen(true)} aria-label="이야기꾼과 대화">
+        💬{unread > 0 && <span className="unread">{unread}</span>}
+      </button>
+      {chatOpen && (
+        <ChatModal
+          title="💬 이야기꾼과 대화"
+          side="player"
+          messages={view.chat}
+          onSend={sendChat}
+          onClose={() => {
+            setChatOpen(false)
+            setSeen(hostCount)
+          }}
+        />
+      )}
     </main>
   )
 }
